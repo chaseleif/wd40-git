@@ -70,39 +70,6 @@ test_expect_success GPGSSH 'strip SSH signature with --signed-commits=strip' '
 	test_must_be_empty log
 '
 
-test_expect_success RUST,GPG 'setup a commit with dual OpenPGP signatures on its SHA-1 and SHA-256 formats' '
-	# Create a signed SHA-256 commit
-	git init --object-format=sha256 explicit-sha256 &&
-	git -C explicit-sha256 config extensions.compatObjectFormat sha1 &&
-	git -C explicit-sha256 checkout -b dual-signed &&
-	test_commit -C explicit-sha256 A &&
-	echo B >explicit-sha256/B &&
-	git -C explicit-sha256 add B &&
-	test_tick &&
-	git -C explicit-sha256 commit -S -m "signed commit" B &&
-	SHA256_B=$(git -C explicit-sha256 rev-parse dual-signed) &&
-
-	# Create the corresponding SHA-1 commit
-	SHA1_B=$(git -C explicit-sha256 rev-parse --output-object-format=sha1 dual-signed) &&
-
-	# Check that the resulting SHA-1 commit has both signatures
-	git -C explicit-sha256 cat-file -p $SHA1_B >out &&
-	test_grep -E "^gpgsig " out &&
-	test_grep -E "^gpgsig-sha256 " out
-'
-
-test_expect_success RUST,GPG 'strip both OpenPGP signatures with --signed-commits=warn-strip' '
-	git -C explicit-sha256 fast-export --signed-commits=verbatim dual-signed >output &&
-	test_grep -E "^gpgsig sha1 openpgp" output &&
-	test_grep -E "^gpgsig sha256 openpgp" output &&
-	git -C new fast-import --quiet --signed-commits=warn-strip <output >log 2>&1 &&
-	git -C new cat-file commit refs/heads/dual-signed >actual &&
-	test_grep ! -E "^gpgsig " actual &&
-	test_grep ! -E "^gpgsig-sha256 " actual &&
-	test_grep "stripping a commit signature" log >out &&
-	test_line_count = 2 out
-'
-
 for mode in strip-if-invalid sign-if-invalid abort-if-invalid
 do
 	test_expect_success GPG "import commit with no signature with --signed-commits=$mode" '

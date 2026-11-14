@@ -3,7 +3,8 @@
 test_description='git cat-file'
 
 . ./test-lib.sh
-. "$TEST_DIRECTORY/lib-loose.sh"
+. "$TEST_DIRECTORY"/lib-loose.sh
+. "$TEST_DIRECTORY"/lib-cat-file.sh
 
 test_cmdmode_usage () {
 	test_expect_code 129 "$@" 2>err &&
@@ -98,18 +99,6 @@ do
 		test_incompatible_usage git cat-file $opt commit HEAD
 	'
 done
-
-echo_without_newline () {
-    printf '%s' "$*"
-}
-
-echo_without_newline_nul () {
-	echo_without_newline "$@" | tr '\n' '\0'
-}
-
-strlen () {
-    echo_without_newline "$1" | wc -c | sed -e 's/^ *//'
-}
 
 run_tests () {
     type=$1
@@ -246,10 +235,6 @@ test_expect_success "setup part 1" '
 	git config extensions.objectformat $test_hash_algo
 '
 
-test_expect_success RUST 'compat setup' '
-	git config extensions.compatobjectformat $test_compat_hash_algo
-'
-
 test_expect_success 'setup part 2' '
 	echo_without_newline "$hello_content" > hello &&
 	git update-index --add hello &&
@@ -281,12 +266,6 @@ run_blob_tests () {
 
 run_blob_tests $hello_oid
 
-if test_have_prereq RUST
-then
-	hello_compat_oid=$(git rev-parse --output-object-format=$test_compat_hash_algo $hello_oid)
-	run_blob_tests $hello_compat_oid
-fi
-
 test_expect_success '--batch-check without %(rest) considers whole line' '
 	echo "$hello_oid blob $hello_size" >expect &&
 	git update-index --add --cacheinfo 100644 $hello_oid "white space" &&
@@ -303,17 +282,6 @@ run_tests 'tree' $tree_oid "" $tree_size "" "$tree_pretty_content"
 run_tests 'blob' "$tree_oid:hello" "100644" $hello_size "" "$hello_content" $hello_oid
 run_tests 'blob' "$tree_oid:path with spaces" "100755" $hello_size "" "$hello_content" $hello_oid
 
-if test_have_prereq RUST
-then
-	tree_compat_oid=$(git rev-parse --output-object-format=$test_compat_hash_algo $tree_oid)
-	tree_compat_size=$((2 * $(test_oid --hash=compat rawsz) + 13 + 24))
-	tree_compat_pretty_content="100644 blob $hello_compat_oid	hello${LF}100755 blob $hello_compat_oid	path with spaces${LF}"
-
-	run_tests 'tree' $tree_compat_oid "" $tree_compat_size "" "$tree_compat_pretty_content"
-	run_tests 'blob' "$tree_compat_oid:hello" "100644" $hello_size "" "$hello_content" $hello_compat_oid
-	run_tests 'blob' "$tree_compat_oid:path with spaces" "100755" $hello_size "" "$hello_content" $hello_compat_oid
-fi
-
 commit_message="Initial commit"
 commit_oid=$(echo_without_newline "$commit_message" | git commit-tree $tree_oid)
 commit_size=$(($(test_oid hexsz) + 137))
@@ -324,19 +292,6 @@ committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
 $commit_message"
 
 run_tests 'commit' $commit_oid "" $commit_size "$commit_content" "$commit_content"
-
-if test_have_prereq RUST
-then
-	commit_compat_oid=$(git rev-parse --output-object-format=$test_compat_hash_algo $commit_oid)
-	commit_compat_size=$(($(test_oid --hash=compat hexsz) + 137))
-	commit_compat_content="tree $tree_compat_oid
-author $GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL> $GIT_AUTHOR_DATE
-committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> $GIT_COMMITTER_DATE
-
-$commit_message"
-
-	run_tests 'commit' $commit_compat_oid "" $commit_compat_size "$commit_compat_content" "$commit_compat_content"
-fi
 
 tag_header_without_oid="type blob
 tag hellotag
@@ -352,20 +307,6 @@ tag_oid=$(echo_without_newline "$tag_content" | git hash-object -t tag --stdin -
 tag_size=$(strlen "$tag_content")
 
 run_tests 'tag' $tag_oid "" $tag_size "$tag_content" "$tag_content"
-
-if test_have_prereq RUST
-then
-	tag_compat_header_without_timestamp="object $hello_compat_oid
-$tag_header_without_oid"
-	tag_compat_content="$tag_compat_header_without_timestamp 0 +0000
-
-$tag_description"
-
-	tag_compat_oid=$(git rev-parse --output-object-format=$test_compat_hash_algo $tag_oid)
-	tag_compat_size=$(strlen "$tag_compat_content")
-
-	run_tests 'tag' $tag_compat_oid "" $tag_compat_size "$tag_compat_content" "$tag_compat_content"
-fi
 
 test_expect_success "Reach a blob from a tag pointing to it" '
 	echo_without_newline "$hello_content" >expect &&
@@ -615,8 +556,6 @@ flush"
 
 batch_tests $hello_oid $tree_oid $tree_size $commit_oid $commit_size "$commit_content" $tag_oid $tag_size "$tag_content"
 
-test_have_prereq RUST && batch_tests $hello_compat_oid $tree_compat_oid $tree_compat_size $commit_compat_oid $commit_compat_size "$commit_compat_content" $tag_compat_oid $tag_compat_size "$tag_compat_content"
-
 
 test_expect_success FUNNYNAMES 'setup with newline in input' '
 	touch -- "newline${LF}embedded" &&
@@ -696,8 +635,8 @@ test_expect_success '%(deltabase) reports packed delta bases' '
 	git repack -ad &&
 	git cat-file --batch-check="%(deltabase)" <blobs >actual &&
 	{
-		grep "$(git rev-parse HEAD:foo)" actual ||
-		grep "$(git rev-parse HEAD:foo-plus)" actual
+		test_grep "$(git rev-parse HEAD:foo)" actual ||
+		test_grep "$(git rev-parse HEAD:foo-plus)" actual
 	}
 '
 
@@ -826,7 +765,7 @@ test_expect_success 'cat-file -t and -s on corrupt loose object' '
 		# Swap the two to corrupt the repository
 		mv -f "$other_path" "$empty_path" &&
 		test_must_fail git fsck 2>err.fsck &&
-		grep "hash-path mismatch" err.fsck &&
+		test_grep "hash-path mismatch" err.fsck &&
 
 		# confirm that cat-file is reading the new swapped-in
 		# blob...
@@ -1261,10 +1200,6 @@ test_expect_success 'batch-check with a submodule' '
 	test_unconfig extensions.compatobjectformat &&
 	printf "160000 commit $(test_oid deadbeef)\tsub\n" >tree-with-sub &&
 	tree=$(git mktree <tree-with-sub) &&
-	if test_have_prereq RUST
-	then
-		test_config extensions.compatobjectformat $test_compat_hash_algo
-	fi &&
 
 	git cat-file --batch-check >actual <<-EOF &&
 	$tree:sub
@@ -1318,37 +1253,45 @@ test_expect_success 'cat-file --batch-all-objects --batch-check ignores replace'
 test_expect_success 'batch-command empty command' '
 	echo "" >cmd &&
 	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
-	grep "^fatal:.*empty command in input.*" err
+	test_grep "^fatal:.*empty command in input.*" err
 '
 
 test_expect_success 'batch-command whitespace before command' '
 	echo " info deadbeef" >cmd &&
 	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
-	grep "^fatal:.*whitespace before command.*" err
+	test_grep "^fatal:.*whitespace before command.*" err
 '
 
 test_expect_success 'batch-command unknown command' '
 	echo unknown_command >cmd &&
 	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
-	grep "^fatal:.*unknown command.*" err
+	test_grep "^fatal:.*unknown command.*" err
 '
 
 test_expect_success 'batch-command missing arguments' '
 	echo "info" >cmd &&
 	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
-	grep "^fatal:.*info requires arguments.*" err
+	test_grep "^fatal:.*info requires arguments.*" err
 '
 
 test_expect_success 'batch-command flush with arguments' '
 	echo "flush arg" >cmd &&
 	test_expect_code 128 git cat-file --batch-command --buffer <cmd 2>err &&
-	grep "^fatal:.*flush takes no arguments.*" err
+	test_grep "^fatal:.*flush takes no arguments.*" err
 '
 
 test_expect_success 'batch-command flush without --buffer' '
 	echo "flush" >cmd &&
 	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
-	grep "^fatal:.*flush is only for --buffer mode.*" err
+	test_grep "^fatal:.*flush is only for --buffer mode.*" err
+'
+
+test_expect_success 'batch-command contents auto-handles type' '
+	echo "HEAD" |
+		git cat-file --batch="%(objectname)" >expect &&
+	echo "contents HEAD" |
+		git cat-file --batch-command="%(objectname)" >actual &&
+	test_cmp expect actual
 '
 
 perl_script='

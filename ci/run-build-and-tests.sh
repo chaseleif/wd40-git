@@ -1,4 +1,3 @@
-
 #!/bin/sh
 #
 # Build and test Git

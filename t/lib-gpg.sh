@@ -74,13 +74,6 @@ test_lazy_prereq GPG2 '
 		prepare_gnupghome &&
 		(gpgconf --kill all || : ) &&
 
-		# NEEDSWORK: prepare_gnupghome() should definitely be
-		# called here, but it looks like it exposes a
-		# pre-existing, hidden bug by allowing some tests in
-		# t1016-compatObjectFormat.sh to run instead of being
-		# skipped. See:
-		# https://lore.kernel.org/git/ZoV8b2RvYxLOotSJ@teonanacatl.net/
-
 		gpg --homedir "${GNUPGHOME}" --import \
 			"$TEST_DIRECTORY"/lib-gpg/keyring.gpg &&
 		gpg --homedir "${GNUPGHOME}" --import-ownertrust \
