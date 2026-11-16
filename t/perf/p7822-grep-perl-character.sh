@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# * Test will skip (causing fail) if not built with USE_LIBPCRE2 !
+
 test_description="git-grep's perl regex
 
 If GIT_PERF_GREP_THREADS is set to a list of threads (e.g. '1 4 8'

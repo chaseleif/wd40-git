@@ -73,6 +73,10 @@ start_fsm () {
 }
 
 stop_fsm () {
+	# a failure here would fail the test
+	# set a value for core.fsmonitor before calling --unset
+	git -C $REPO config core.fsmonitor false
+	# calling unset when key doesn't exist fails with exit 5 (CONFIG_NOTHING_SET)
 	git -C $REPO config --unset core.fsmonitor
 	git -C $REPO update-index --no-fsmonitor
 	test_might_fail git -C $REPO fsmonitor--daemon stop 2>/dev/null

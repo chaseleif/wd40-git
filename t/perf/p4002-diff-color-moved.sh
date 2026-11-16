@@ -7,6 +7,8 @@ test_perf_default_repo
 
 # The endpoints of the diff can be customized by setting TEST_REV_A
 # and TEST_REV_B in the environment when running this test.
+# * Test will skip (causing fail) if TEST_REV_A or _B aren't valid tags
+# * These must be existing tags in the git repo!
 
 rev="${TEST_REV_A:-v2.28.0}"
 if ! rev_a="$(git rev-parse --quiet --verify "$rev")"
